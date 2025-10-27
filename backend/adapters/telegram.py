@@ -8,8 +8,9 @@ from backend.routers.index import read_main
 from backend.db.database import get_session
 from sqlmodel import Session
 
-bot = httpx_teleapi_factory(settings.TELEGRAM_BOT_KEY)
 router = APIRouter()
+
+bot = httpx_teleapi_factory(settings.TELEGRAM_BOT_KEY)
 
 
 async def set_webhook(url: str):
@@ -47,7 +48,6 @@ async def telegram_webhook(
     chat_id = message["chat"]["id"]
     text = message["text"]
     user_contact_id = message["from"]["id"]
-
     try:
         if is_telegram_bot_down():
             bot.sendMessage(chat_id=chat_id, text="⚠️ Sorry, bot is temporarily down.")
@@ -70,7 +70,7 @@ async def telegram_webhook(
             bot.sendMessage(chat_id=chat_id, text="⚠️ Sorry, something went wrong.")
         except Exception as inner_e:
             print("❌ Failed to send error message:", inner_e)
-
+    print("✅ Webhook processed successfully.")
     return {"ok": True}
 
 
