@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Header, Request
+from fastapi import APIRouter, Depends, Header, Request
 from teleapi.httpx_transport import httpx_teleapi_factory
 from backend.config import settings
 from backend.utils.userManagement import read_user
@@ -10,12 +10,14 @@ from sqlmodel import Session
 
 bot = httpx_teleapi_factory(settings.TELEGRAM_BOT_KEY)
 router = APIRouter()
-session = get_session()
 
 
 async def set_webhook(url: str):
-    response = bot.setWebhook(url=url, secret_token=settings.WEBHOOK_SECRET_TOKEN)
-    print("Telegram webhook set:", response)
+    try:
+        response = bot.setWebhook(url=url, secret_token=settings.WEBHOOK_SECRET_TOKEN)
+        print("✅ Telegram webhook set:", response)
+    except Exception as e:
+        print("❌ Failed to set Telegram webhook:", e)
 
 
 def secret_token_dependency(
@@ -30,37 +32,44 @@ async def telegram_webhook(
     _=Depends(secret_token_dependency),
     session: Session = Depends(get_session),
 ):
-    update = await req.json()
-    # print("Received update:", update)
-    message = update.get("message")
-    print("Message content:", message)
+    try:
+        update = await req.json()
+    except Exception as e:
+        print("❌ Failed to parse request JSON:", e)
+        return {"ok": True}
 
-    if message and "text" in message:
-        chat_id = message["chat"]["id"]
-        text = message["text"]
-        user_contact_id = message["from"]["id"]
-        # send message that its temporarily down
+    message = update.get("message")
+    print("📩 Message content:", message)
+
+    if not message or "text" not in message:
+        return {"ok": True}
+
+    chat_id = message["chat"]["id"]
+    text = message["text"]
+    user_contact_id = message["from"]["id"]
+
+    try:
         if is_telegram_bot_down():
-            bot.sendMessage(chat_id=chat_id, text="Sorry, bot is temporarily down.")
+            bot.sendMessage(chat_id=chat_id, text="⚠️ Sorry, bot is temporarily down.")
             return {"ok": True}
+
+        user = read_user(str(user_contact_id), session)
+
         try:
-            user = read_user(str(user_contact_id), session)
-            response_text = f"Hello, {user.name}! You said: {text}"
-            try:
-                response = read_main(text, str(user_contact_id), session)
-            except Exception as e:
-                print("There was an error", e)
-                response = {"error": str(e)}
-            print("Response from read_main:", response)
-            response_text = response.get("message", "I received your message!")
-            print("Response message:", response_text)
-            bot.sendMessage(
-                chat_id=chat_id, text=response_text or "I received your message!"
-            )
+            response = read_main(text, str(user_contact_id), session)
+            response_text = response.get("message", "✅ I received your message!")
         except Exception as e:
-            print("Error :", e)
-            bot.sendMessage(chat_id=chat_id, text="Sorry, I couldn't find you.")
-            return {"ok": True}
+            print("❌ Error in read_main:", e)
+            response_text = "⚠️ An internal error occurred."
+
+        bot.sendMessage(chat_id=chat_id, text=response_text)
+
+    except Exception as e:
+        print("❌ Unhandled exception in webhook:", e)
+        try:
+            bot.sendMessage(chat_id=chat_id, text="⚠️ Sorry, something went wrong.")
+        except Exception as inner_e:
+            print("❌ Failed to send error message:", inner_e)
 
     return {"ok": True}
 
@@ -69,6 +78,6 @@ async def cleanup_bot():
     """Cleanup function to remove webhook on shutdown"""
     try:
         response = bot.deleteWebhook()
-        print("Telegram webhook removed:", response)
+        print("🧹 Telegram webhook removed:", response)
     except Exception as e:
-        print("Failed to remove Telegram webhook:", e)
+        print("❌ Failed to remove Telegram webhook:", e)
