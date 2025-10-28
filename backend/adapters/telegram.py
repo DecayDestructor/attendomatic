@@ -57,7 +57,7 @@ async def poll_updates():
 
     while True:
         try:
-            updates = bot.getUpdates(offset=offset, timeout=10)
+            updates = bot.getUpdates(offset=offset, timeout=180)
             if not updates:
                 await asyncio.sleep(1)
                 continue
