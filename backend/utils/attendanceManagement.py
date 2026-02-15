@@ -24,7 +24,9 @@ def get_daily_timetable_user(
     user_id: int, day: DayEnum, session: Session = Depends(get_session)
 ):
     statement = select(TimetableSlots).where(
-        TimetableSlots.user_id == user_id, TimetableSlots.day == day
+        TimetableSlots.user_id == user_id,
+        TimetableSlots.day == day,
+        TimetableSlots.is_temporary == False,
     )
     results = session.exec(statement)
     timetable = results.all()
@@ -66,7 +68,21 @@ def mark_attendance(
         )
     ).first()
     if not slot:
-        raise HTTPException(status_code=404, detail="Timetable slot not found")
+        # create a temporary slot with the given details and mark attendance for it
+        temp_slot = TimetableSlots(
+            user_id=user_id,
+            subject_code=subject_code,
+            day=day,
+            start_time=start_time,
+            end_time=end_time,
+            class_type=classType,
+            is_temporary=True,
+            date_of_slot=date_of_slot,
+        )
+        session.add(temp_slot)
+        session.commit()
+        session.refresh(temp_slot)
+        slot = temp_slot
     # Check if attendance has already been marked for this slot and date along with the same status
     existing_log = session.exec(
         select(AttendanceLog).where(

@@ -12,7 +12,10 @@ from backend.routers.attendanceRouter import (
     get_attendance_stats,
     delete_slot,
 )
-from backend.utils.attendanceManagement import get_daily_timetable_user, mark_attendance
+from backend.utils.attendanceManagement import (
+    get_daily_timetable_user,
+    mark_attendance,
+)
 from backend.utils.userManagement import read_user
 from backend.utils.pending_actions import *
 import json
@@ -48,14 +51,14 @@ def read_main(
     all_timetables = []
     # print("Extracted texts:", all_texts)
     # print("Extracted dates:", all_dates)
-    # print(
-    #     "Below is a list of extracted phrases along with their parsed dates and weekdays:\n\n"
-    #     + "\n".join(
-    #         f"- '{text}' -> {date.strftime('%Y-%m-%d')} ({weekday})"
-    #         for text, date, weekday in zip(all_texts, all_dates, all_weekdays)
-    #     )
-    #     + "\n\nUse this information to determine the days or dates relevant for actions."
-    # )
+    print(
+        "Below is a list of extracted phrases along with their parsed dates and weekdays:\n\n"
+        + "\n".join(
+            f"- '{text}' -> Date: {date.strftime('%Y-%m-%d')} Day:({weekday})"
+            for text, date, weekday in zip(all_texts, all_dates, all_weekdays)
+        )
+        + "\n\nUse this information to determine the days or dates relevant for actions."
+    )
     for days in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]:
         try:
             timetable = get_daily_timetable_user(user.id, days, session)
@@ -76,8 +79,8 @@ def read_main(
             "content": (
                 "You are an intelligent attendance management assistant. "
                 "Your job is to read user messages and convert them into a strict JSON object that follows the LLMMultiResponse schema.\n\n"
-                "Each user message may contain one or more separate actions (e.g., mark attendance, add slot, get stats, etc.). "
-                "For every distinct operation mentioned by the user, create exactly **one separate object** in the 'actions' array.\n\n"
+                "Each user message may contain one or more separate actions. "
+                "For every distinct operation mentioned by the user, create exactly one separate object in the 'actions' array.\n\n"
                 "=== INTENT MAPPING RULES ===\n"
                 "You must map each user instruction to exactly one of these intents:\n"
                 "- create_subject\n"
@@ -87,49 +90,65 @@ def read_main(
                 "- get_daily_timetable\n"
                 "- get_attendance_stats\n"
                 "- delete_subject\n\n"
-                "You must be STRICT about interpreting time or day phrases.\n"
-                "If a date-like word (e.g., 'yesterady', 'todai', 'mondaye') is misspelled or unrecognized, "
-                "DO NOT GUESS. Instead, set 'confusion_flag = True' in that action’s params and leave any date/day fields as null.\n"
-                "Never assume or correct user typos automatically — your job is to flag uncertainty, not fix it."
+                "=== DAY ENUM RULE ===\n"
+                "If day_of_slot is present, it MUST use exactly one of these values:\n"
+                "- Mon\n"
+                "- Tue\n"
+                "- Wed\n"
+                "- Thu\n"
+                "- Fri\n"
+                "- Sat\n"
+                "- Sun\n\n"
+                "=== DATE INTERPRETATION RULES ===\n"
+                "If a date-like word is misspelled or unrecognized:\n"
+                "- DO NOT guess\n"
+                "- DO NOT autocorrect\n"
+                "- Set confusion_flag = True\n"
+                "- Leave date_of_slot and day_of_slot as null\n\n"
+                "=== DATE AND DAY CONSISTENCY RULE ===\n"
+                "If date_of_slot is known, you MUST also set day_of_slot.\n"
+                "Derive day_of_slot using the weekday provided in the parsed reference.\n"
+                "NEVER leave day_of_slot null if date_of_slot exists.\n\n"
+                "Example:\n"
+                "Parsed reference:\n"
+                "'tomorrow' -> 2026-02-16 (Mon)\n\n"
+                "Correct params:\n"
+                "date_of_slot = '2026-02-16'\n"
+                "day_of_slot = 'Mon'\n\n"
                 "=== ACTION GENERATION RULES ===\n"
-                "1. Each action in 'actions' must correspond to **exactly one intent**.\n"
-                "2. If a user message contains multiple intents (e.g., 'mark attendance and get my stats'), output multiple actions — one for each.\n"
-                "3. Never merge multiple intents or tasks into one action.\n"
-                "4. Each action must have a valid HTTP method ('GET', 'POST', 'PUT', or 'DELETE') based on the operation.\n"
-                "5. All optional fields in 'params' must be filled with null if not applicable.\n\n"
+                "1. Each action must correspond to exactly one intent.\n"
+                "2. If multiple intents exist, output multiple actions.\n"
+                "3. Never merge intents.\n"
+                "4. HTTP method mapping:\n"
+                "   POST → create or mark attendance\n"
+                "   GET → retrieve data\n"
+                "   PUT → update\n"
+                "   DELETE → delete\n"
+                "5. All params fields must exist. Use null if not applicable.\n\n"
                 "=== ATTENDANCE RULES ===\n"
-                "1. If the user says anything like 'all lectures', 'all classes', 'attended everything', or 'I attended all classes', "
-                "mark all lectures in the timetable as 'present'. Create one 'mark_attendance' action per slot, filling subject_code, classType, day_of_slot, start_time, end_time, and status.\n"
-                "2. If the user says 'all lectures except X', mark all lectures as 'present' except those containing X in subject_code or class_type (which are 'absent'). Generate one action per slot accordingly.\n"
-                "3. If the user lists only specific lectures, mark only those as 'present'.\n"
-                "4. Do not mark excluded subjects as present.\n"
-                "5. Always include date_of_slot.\n\n"
+                "If the user implies attendance, use status = present.\n"
+                "Always include date_of_slot and day_of_slot when date reference exists.\n\n"
+                "=== TEMPORARY SLOT RULES ===\n"
+                "If the lecture does NOT exist in timetable:\n"
+                "- STILL use intent = mark_attendance\n"
+                "- DO NOT use add_slot\n"
+                "- DO NOT set confusion_flag\n"
+                "- Fill all known fields\n"
+                "- Backend will create temporary slot automatically\n\n"
                 "=== SLOT UPDATE RULES ===\n"
-                "1. If the user says something like 'My DBMS Lab was shifted from Monday to Tuesday', create an action with intent 'update_slot'.\n"
-                "   Include in 'params' the original slot’s subject_code, classType, old start_time, old end_time, and old day_of_slot. "
-                "Include 'updatedSlot' containing the new day_of_slot, and optionally new start_time or end_time if mentioned.\n"
-                "2. If the user says 'My OS lecture was moved to 10 AM', update only the time fields.\n"
-                "3. Do not create or delete slots unless explicitly told ('add a new lecture', 'delete my ML lab').\n\n"
+                "If slot moved or rescheduled, use update_slot intent.\n\n"
                 "=== ATTENDANCE STATS RULES ===\n"
-                "1. If the user asks for 'attendance stats', 'attendance percentage', or 'how many classes I attended', create an action with intent 'get_attendance_stats'.\n"
-                "2. If the user specifies a subject or class type (e.g., 'OS labs' or 'DBMS lectures'), include those in params; otherwise, set to null.\n"
-                "3. If both subject and classType are provided, return stats for that specific subject and class type.\n"
-                "4. If only subject is provided, return stats for all class types of that subject.\n"
-                "5. If neither is provided, set both to null.\n"
-                "6. Do not assume subjects not in the timetable or database.\n\n"
-                "=== CONFUSION FLAG ===\n"
-                "1. If the user message is ambiguous or contains conflicting instructions, set 'confusion_flag = True' in the params.\n"
-                "2. Do not assume the intent in ambiguous cases. Leave other fields as null if unsure.\n"
-                "3. The system will prompt the user to clarify before executing any action.\n\n"
-                "=== OUTPUT REQUIREMENTS ===\n"
-                "1. Output **valid JSON only**, following the LLMMultiResponse schema (no natural language explanations).\n"
-                "2. Each element in 'actions' must contain exactly one intent and one HTTP method.\n"
-                "3. Never merge multiple tasks into a single params.\n"
-                "4. When marking multiple classes or slots, output **one action per slot**.\n"
-                "5. If something is missing or not applicable, set it to null."
-                "=== Confirmation Message ===\n"
-                "In the 'confirmation_message' field of the response, provide a concise natural language summary of the actions you have generated. "
-                "This message will be shown to the user to confirm their request before any actions are executed. For example, if the user says 'Mark my OS lecture on Monday as attended and get my attendance stats', the confirmation_message could be: 'I will mark your OS lecture on Monday as attended and retrieve your attendance stats. Does that sound correct?'"
+                "If user asks for attendance stats, use get_attendance_stats intent.\n\n"
+                "=== CONFUSION RULE ===\n"
+                "Set confusion_flag = True ONLY if instruction is ambiguous or invalid.\n\n"
+                "=== OUTPUT RULES ===\n"
+                "Output valid JSON only.\n"
+                "No explanations.\n"
+                "Follow LLMMultiResponse schema exactly.\n\n"
+                "=== CONFIRMATION MESSAGE RULE ===\n"
+                "Include confirmation_message summarizing actions in human readable format.\n"
+                "Example:\n"
+                "'I will mark your DC lecture on 16 February 2026 (Monday) from 4 PM to 5 PM as attended. Does that sound correct?'"
             ),
         },
         {
@@ -141,13 +160,14 @@ def read_main(
         {
             "role": "system",
             "content": (
-                "The user's message has been analyzed for date and day references. "
-                "Below is a list of extracted phrases along with their parsed dates and weekdays:\n\n"
+                "The user's message has been analyzed for date and day references.\n\n"
+                "Below are extracted phrases and parsed values:\n\n"
                 + "\n".join(
                     f"- '{text}' -> {date.strftime('%Y-%m-%d')} ({weekday})"
                     for text, date, weekday in zip(all_texts, all_dates, all_weekdays)
                 )
-                + "\n\nUse this information to determine the days or dates relevant for actions."
+                + "\n\nUse this information when filling date_of_slot and day_of_slot.\n"
+                "You MUST set both fields when date is known."
             ),
         },
         {
@@ -167,11 +187,11 @@ def read_main(
             },
         },
     )
-    # print("LLM Response:", response)
     review = LLMMultiResponse.model_validate(
         json.loads(response.choices[0].message.content)
     )
 
+    print("LLM Response:", review)
     create_pending_action(
         confirmation_message=review.confirmation_message,
         review=review,
@@ -210,6 +230,8 @@ def perform_intent(
     print("Performing intent for review:", review_model.model_dump())
 
     for item in review_model.actions:
+        if item.params.date_of_slot and not item.params.day_of_slot:
+            item.params.day_of_slot = DayEnum(item.params.date_of_slot.strftime("%a"))
         function_call = item.intent
         if function_call == IntentEnum.CREATE_SUBJECT:
             try:

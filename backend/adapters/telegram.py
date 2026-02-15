@@ -34,6 +34,7 @@ async def process_message(message: dict):
     chat_id = message["chat"]["id"]
     text = message["text"]
     user_contact_id = message["from"]["id"]
+    contact_id = str(user_contact_id)
 
     session: Session = get_db_session()
 
@@ -50,12 +51,19 @@ async def process_message(message: dict):
             if text.lower() in ["yes", "y"]:
                 confirm_pending_action(get_pending, session)
                 print("Performing intent for pending action:", get_pending.intent_json)
-                perform_intent(
-                    contact_id=get_pending.contact_id,
-                    review=get_pending.intent_json,
-                    session=session,
-                )
-                bot.sendMessage(chat_id=chat_id, text="Action confirmed and performed!")
+                try:
+                    message = perform_intent(
+                        contact_id=get_pending.contact_id,
+                        review=get_pending.intent_json,
+                        session=session,
+                    ).get("message", "Action performed successfully!")
+                    bot.sendMessage(chat_id=chat_id, text=message)
+                except Exception as e:
+                    print("Error performing intent for pending action:", e)
+                    bot.sendMessage(
+                        chat_id=chat_id,
+                        text="Sorry, there was an error performing the action.",
+                    )
             else:
                 cancel_pending_action(get_pending, session)
                 bot.sendMessage(chat_id=chat_id, text="Action cancelled.")

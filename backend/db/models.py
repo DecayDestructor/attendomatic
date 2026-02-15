@@ -59,6 +59,7 @@ class TimetableSlots(SQLModel, table=True):
     subject_code: str = Field(
         foreign_key="subjects.subject_code", index=True, ondelete="CASCADE"
     )
+    is_temporary: bool = Field(default=False)
 
 
 class AttendanceStatus(str, Enum):
@@ -136,6 +137,7 @@ class IntentEnum(str, Enum):
     UPDATE_SLOT = "update_slot"
     DELETE_SUBJECT = "delete_subject"
     DELETE_SLOT = "delete_slot"
+    TEMPORARY_SLOT = "temporary_slot"
 
 
 # -------------------------------

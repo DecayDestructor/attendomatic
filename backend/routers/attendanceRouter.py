@@ -115,6 +115,9 @@ def get_attendance_stats(
                 AttendanceStats.classType == classType,
             )
         ).first()
+        print(
+            f"Queried attendance record for user_id={user_id}, subject_code={subject_code}, classType={classType}: {attendance_record}"
+        )
         if not attendance_record:
             raise HTTPException(
                 status_code=404,
