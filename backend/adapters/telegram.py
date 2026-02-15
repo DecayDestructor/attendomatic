@@ -22,6 +22,7 @@ from backend.db.database import get_session
 from sqlmodel import Session
 
 from backend.utils.verify_secret_token import verify_secret_header
+from backend.utils.verify_secret_token import verify_api_secret
 
 router = APIRouter()
 bot = httpx_teleapi_factory(settings.TELEGRAM_BOT_KEY)  # Telegram bot API client
@@ -146,8 +147,8 @@ async def telegram_webhook(
 
 
 @router.get("/set-webhook")
-async def set_webhook():
-    """Manually set the Telegram webhook"""
+async def set_webhook(_=Depends(verify_api_secret)):
+    """Manually set the Telegram webhook (requires API key)"""
     webhook_url = f"{settings.BASE_URL}/adapters/telegram/webhook"
     try:
         bot.setWebhook(url=webhook_url, secret_token=settings.WEBHOOK_SECRET_TOKEN)
@@ -157,8 +158,8 @@ async def set_webhook():
 
 
 @router.get("/delete-webhook")
-async def delete_webhook():
-    """Delete the Telegram webhook"""
+async def delete_webhook(_=Depends(verify_api_secret)):
+    """Delete the Telegram webhook (requires API key)"""
     try:
         bot.deleteWebhook()
         return {"status": "Webhook deleted"}
