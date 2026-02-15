@@ -31,9 +31,11 @@ from backend.utils.userManagement import read_user
 from backend.utils.pending_actions import *
 import json
 from groq import Groq
+from backend.utils.verify_secret_token import verify_api_secret
 
 
-router = APIRouter()
+# All routes in this router require the X-Api-Secret-Key header
+router = APIRouter(dependencies=[Depends(verify_api_secret)])
 client = Groq(api_key=settings.GROQ_API_KEY)
 
 import parsedatetime as pdt

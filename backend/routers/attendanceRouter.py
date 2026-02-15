@@ -19,15 +19,20 @@ from backend.utils.attendanceManagement import (
     mark_attendance,
 )
 import json
+from backend.utils.verify_secret_token import verify_api_secret
 
-router = APIRouter()
+# All routes in this router require the X-Api-Secret-Key header
+router = APIRouter(dependencies=[Depends(verify_api_secret)])
 
 
 # ──────────── POST ROUTES ────────────
 
 
 @router.post("/create_subject")
-def create_subject(subject: Subjects, session: Session = Depends(get_session)):
+def create_subject(
+    subject: Subjects,
+    session: Session = Depends(get_session),
+):
     """Create a new subject. Fails if code or name already exists."""
     existing_subject = session.exec(
         select(Subjects).where(

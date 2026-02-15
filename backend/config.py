@@ -16,7 +16,7 @@ class Settings(BaseSettings):
         str  # Secret used to verify incoming Telegram webhook requests
     )
     BASE_URL: str  # Public URL prefix (e.g. https://yourdomain.com)
-
+    API_SECRET_KEY: str  # Secret key for authenticating API requests (custom header)
     model_config = SettingsConfigDict(
         env_file=".env",
     )
