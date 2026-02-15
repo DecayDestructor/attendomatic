@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request, HTTPException
+from fastapi import APIRouter, Header, Request, HTTPException
 from teleapi.httpx_transport import httpx_teleapi_factory
 from backend.config import settings
 from backend.utils.userManagement import read_user
@@ -7,12 +7,23 @@ from backend.routers.index import read_main
 from backend.db.database import get_session
 from sqlmodel import Session
 
+from backend.utils.verify_secret_token import verify_secret_header
+
 router = APIRouter()
 bot = httpx_teleapi_factory(settings.TELEGRAM_BOT_KEY)
 
 
 def get_db_session():
     return next(get_session())
+
+
+from backend.utils.pending_actions import (
+    create_pending_action,
+    get_pending_action,
+    confirm_pending_action,
+    cancel_pending_action,
+)
+from backend.routers.index import LLMMultiResponse, perform_intent
 
 
 async def process_message(message: dict):
@@ -32,14 +43,36 @@ async def process_message(message: dict):
 
     try:
         user = read_user(str(user_contact_id), session)
+        print(f"Received message from user {user.name} ({user_contact_id}): {text}")
+        # check if there is a pending action for this user, if yes, confirm it and perform the action
+        get_pending = get_pending_action(str(user_contact_id), session)
+        if get_pending:
+            if text.lower() in ["yes", "y"]:
+                confirm_pending_action(get_pending, session)
+                print("Performing intent for pending action:", get_pending.intent_json)
+                perform_intent(
+                    contact_id=get_pending.contact_id,
+                    review=get_pending.intent_json,
+                    session=session,
+                )
+                bot.sendMessage(chat_id=chat_id, text="Action confirmed and performed!")
+            else:
+                cancel_pending_action(get_pending, session)
+                bot.sendMessage(chat_id=chat_id, text="Action cancelled.")
+            return
         try:
             response = read_main(text, str(user_contact_id), session)
+            review = response.get("review")
+            contact_id = response.get("contact_id")
         except Exception as e:
             print("There was an error:", e)
             response = {"error": str(e)}
-
-        response_text = response.get("message", "I received your message!")
+        response_text = response.get(
+            "confirmation_message", "There was an error processing your request."
+        )
+        print(f"Sending response to user {contact_id}: {response_text}")
         bot.sendMessage(chat_id=chat_id, text=response_text)
+        # receive a yes or no answer from the user and if yes, perform the action, if no, cancel the action
     except Exception as e:
         print("Error processing message:", e)
         bot.sendMessage(chat_id=chat_id, text="Sorry, I couldn't find you.")
@@ -47,8 +80,23 @@ async def process_message(message: dict):
         session.close()
 
 
+def verify_telegram_secret(x_telegram_bot_api_secret_token: str = Header(None)):
+    """Dependency that validates Telegram secret header"""
+    verify_secret_header(
+        header_value=x_telegram_bot_api_secret_token,
+        expected_token=settings.WEBHOOK_SECRET_TOKEN,
+    )
+
+
+# import depends
+from fastapi import Depends
+
+
 @router.post("/webhook")
-async def telegram_webhook(request: Request):
+async def telegram_webhook(
+    request: Request,
+    _=Depends(verify_telegram_secret),
+):
     """Receive updates directly from Telegram"""
     try:
         data = await request.json()
@@ -59,6 +107,7 @@ async def telegram_webhook(request: Request):
             await process_message(message)
 
         return {"ok": True}
+
     except Exception as e:
         print("Webhook error:", e)
         raise HTTPException(status_code=500, detail=str(e))
@@ -69,7 +118,7 @@ async def set_webhook():
     """Manually set the Telegram webhook"""
     webhook_url = f"{settings.BASE_URL}/adapters/telegram/webhook"
     try:
-        bot.setWebhook(url=webhook_url)
+        bot.setWebhook(url=webhook_url, secret_token=settings.WEBHOOK_SECRET_TOKEN)
         return {"status": "Webhook set successfully", "url": webhook_url}
     except Exception as e:
         return {"status": "Failed", "error": str(e)}

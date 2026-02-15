@@ -14,86 +14,9 @@ from backend.routers.attendanceRouter import (
 )
 from backend.utils.attendanceManagement import get_daily_timetable_user, mark_attendance
 from backend.utils.userManagement import read_user
+from backend.utils.pending_actions import *
 import json
 from groq import Groq
-from typing import Literal
-from enum import Enum
-from typing import Literal, Optional, List
-from pydantic import BaseModel
-
-# -------------------------------
-# Intent Enum
-# -------------------------------
-
-
-class IntentEnum(str, Enum):
-    CREATE_SUBJECT = "create_subject"
-    ADD_SLOT = "add_slot"
-    MARK_ATTENDANCE = "mark_attendance"
-    GET_DAILY_TIMETABLE = "get_daily_timetable"
-    GET_ATTENDANCE_STATS = "get_attendance_stats"
-    UPDATE_SLOT = "update_slot"
-    DELETE_SUBJECT = "delete_subject"
-    DELETE_SLOT = "delete_slot"
-
-
-# -------------------------------
-# Supporting models
-# -------------------------------
-from datetime import date, datetime, time
-from backend.db.models import DayEnum, ClassType, AttendanceStatus
-
-
-class UpdatedSlot(BaseModel):
-    day: Optional[DayEnum] = None
-    start_time: Optional[time] = None
-    end_time: Optional[time] = None
-    subject_code: Optional[str] = None
-    class_type: Optional[ClassType] = None
-
-
-class Slot(BaseModel):
-    user_id: int
-    date_of_slot: Optional[date] = None
-    start_time: time
-    end_time: time
-    subject_code: str
-    class_type: ClassType
-
-
-# -------------------------------
-# Main parameters schema
-# -------------------------------
-
-
-class Params(BaseModel):
-    user_id: Optional[int] = None
-    subject_code: Optional[str] = None
-    subject_name: Optional[str] = None
-    date_of_slot: Optional[date] = None
-    start_time: Optional[time] = None
-    end_time: Optional[time] = None
-    status: Optional[AttendanceStatus] = None
-    classType: Optional[ClassType] = None
-    slot_id: Optional[int] = None
-    updatedSlot: Optional[UpdatedSlot] = None
-    day_of_slot: Optional[DayEnum] = None
-    confusion_flag: Optional[bool] = None
-
-
-# -------------------------------
-# LLM output schema
-# -------------------------------
-
-
-class LLMResponseSchema(BaseModel):
-    intent: IntentEnum
-    method: Literal["GET", "POST", "PUT", "DELETE"]
-    params: Params
-
-
-class LLMMultiResponse(BaseModel):
-    actions: List[LLMResponseSchema]
 
 
 router = APIRouter()
@@ -121,9 +44,18 @@ def read_main(
     all_texts = [x[0] for x in extracted]
     all_dates = [x[1] for x in extracted]
 
-    all_days = [(dates, dates.strftime("%a")) for dates in all_dates]
     all_weekdays = [date.strftime("%a") for date in all_dates]
     all_timetables = []
+    # print("Extracted texts:", all_texts)
+    # print("Extracted dates:", all_dates)
+    # print(
+    #     "Below is a list of extracted phrases along with their parsed dates and weekdays:\n\n"
+    #     + "\n".join(
+    #         f"- '{text}' -> {date.strftime('%Y-%m-%d')} ({weekday})"
+    #         for text, date, weekday in zip(all_texts, all_dates, all_weekdays)
+    #     )
+    #     + "\n\nUse this information to determine the days or dates relevant for actions."
+    # )
     for days in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]:
         try:
             timetable = get_daily_timetable_user(user.id, days, session)
@@ -155,6 +87,10 @@ def read_main(
                 "- get_daily_timetable\n"
                 "- get_attendance_stats\n"
                 "- delete_subject\n\n"
+                "You must be STRICT about interpreting time or day phrases.\n"
+                "If a date-like word (e.g., 'yesterady', 'todai', 'mondaye') is misspelled or unrecognized, "
+                "DO NOT GUESS. Instead, set 'confusion_flag = True' in that action’s params and leave any date/day fields as null.\n"
+                "Never assume or correct user typos automatically — your job is to flag uncertainty, not fix it."
                 "=== ACTION GENERATION RULES ===\n"
                 "1. Each action in 'actions' must correspond to **exactly one intent**.\n"
                 "2. If a user message contains multiple intents (e.g., 'mark attendance and get my stats'), output multiple actions — one for each.\n"
@@ -191,6 +127,9 @@ def read_main(
                 "3. Never merge multiple tasks into a single params.\n"
                 "4. When marking multiple classes or slots, output **one action per slot**.\n"
                 "5. If something is missing or not applicable, set it to null."
+                "=== Confirmation Message ===\n"
+                "In the 'confirmation_message' field of the response, provide a concise natural language summary of the actions you have generated. "
+                "This message will be shown to the user to confirm their request before any actions are executed. For example, if the user says 'Mark my OS lecture on Monday as attended and get my attendance stats', the confirmation_message could be: 'I will mark your OS lecture on Monday as attended and retrieve your attendance stats. Does that sound correct?'"
             ),
         },
         {
@@ -203,7 +142,7 @@ def read_main(
             "role": "system",
             "content": (
                 "The user's message has been analyzed for date and day references. "
-                "Below is a list of extracted phrases along with their parsed dates:\n\n"
+                "Below is a list of extracted phrases along with their parsed dates and weekdays:\n\n"
                 + "\n".join(
                     f"- '{text}' -> {date.strftime('%Y-%m-%d')} ({weekday})"
                     for text, date, weekday in zip(all_texts, all_dates, all_weekdays)
@@ -232,9 +171,45 @@ def read_main(
     review = LLMMultiResponse.model_validate(
         json.loads(response.choices[0].message.content)
     )
-    print("Review : ", review)
+
+    create_pending_action(
+        confirmation_message=review.confirmation_message,
+        review=review,
+        contact_id=contact_id,
+        session=session,
+    )
+    return {
+        "review": review,
+        "contact_id": contact_id,
+        "confirmation_message": review.confirmation_message,
+    }
+
+
+def perform_intent(
+    contact_id: str,
+    session: Session,
+    review: LLMMultiResponse | dict = None,
+):
     final_response = []
-    for item in review.actions:
+
+    try:
+        user = read_user(contact_id, session)
+    except HTTPException:
+        raise HTTPException(
+            status_code=400, detail="User not found. Please register first."
+        )
+
+    # Normalize review into Pydantic model
+    if isinstance(review, dict):
+        review_model = LLMMultiResponse(**review)
+    elif isinstance(review, LLMMultiResponse):
+        review_model = review
+    else:
+        raise ValueError(f"Invalid review type: {type(review)}")
+
+    print("Performing intent for review:", review_model.model_dump())
+
+    for item in review_model.actions:
         function_call = item.intent
         if function_call == IntentEnum.CREATE_SUBJECT:
             try:
@@ -376,5 +351,4 @@ def read_main(
             final_response.append(
                 f"I'm sorry, I couldn't understand your request regarding the following request: {item}. Could you please clarify?"
             )
-    print("Review : ", review)
     return {"review": review, "message": "\n".join(final_response)}

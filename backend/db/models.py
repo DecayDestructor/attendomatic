@@ -90,3 +90,109 @@ class AttendanceStats(SQLModel, table=True):
     classType: ClassType = Field()
     total_classes: int = Field(default=0)
     attended_classes: int = Field(default=0)
+
+
+from sqlmodel import SQLModel, Field, Column
+from sqlalchemy import JSON
+from datetime import datetime, timedelta
+from typing import Optional, Dict, Any
+
+
+class PendingAction(SQLModel, table=True):
+    __tablename__ = "pending_actions"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+
+    contact_id: str = Field(index=True)
+
+    intent_json: Dict[str, Any] = Field(sa_column=Column(JSON, nullable=False))
+
+    # Human-readable confirmation message
+    confirmation_message: str = Field(nullable=False)
+
+    status: str = Field(default="pending", index=True)
+
+    # timestamps
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+
+    expires_at: datetime = Field(
+        default_factory=lambda: datetime.utcnow() + timedelta(minutes=5), index=True
+    )
+
+
+# -------------------------------
+from typing import Literal
+from enum import Enum
+from typing import Literal, Optional, List
+from pydantic import BaseModel
+
+
+class IntentEnum(str, Enum):
+    CREATE_SUBJECT = "create_subject"
+    ADD_SLOT = "add_slot"
+    MARK_ATTENDANCE = "mark_attendance"
+    GET_DAILY_TIMETABLE = "get_daily_timetable"
+    GET_ATTENDANCE_STATS = "get_attendance_stats"
+    UPDATE_SLOT = "update_slot"
+    DELETE_SUBJECT = "delete_subject"
+    DELETE_SLOT = "delete_slot"
+
+
+# -------------------------------
+# Supporting models
+# -------------------------------
+from datetime import date, datetime, time
+from backend.db.models import DayEnum, ClassType, AttendanceStatus
+
+
+class UpdatedSlot(BaseModel):
+    day: Optional[DayEnum] = None
+    start_time: Optional[time] = None
+    end_time: Optional[time] = None
+    subject_code: Optional[str] = None
+    class_type: Optional[ClassType] = None
+
+
+class Slot(BaseModel):
+    user_id: int
+    date_of_slot: Optional[date] = None
+    start_time: time
+    end_time: time
+    subject_code: str
+    class_type: ClassType
+
+
+# -------------------------------
+# Main parameters schema
+# -------------------------------
+
+
+class Params(BaseModel):
+    user_id: Optional[int] = None
+    subject_code: Optional[str] = None
+    subject_name: Optional[str] = None
+    date_of_slot: Optional[date] = None
+    start_time: Optional[time] = None
+    end_time: Optional[time] = None
+    status: Optional[AttendanceStatus] = None
+    classType: Optional[ClassType] = None
+    slot_id: Optional[int] = None
+    updatedSlot: Optional[UpdatedSlot] = None
+    day_of_slot: Optional[DayEnum] = None
+    confusion_flag: Optional[bool] = None
+
+
+# -------------------------------
+# LLM output schema
+# -------------------------------
+
+
+class LLMResponseSchema(BaseModel):
+    intent: IntentEnum
+    method: Literal["GET", "POST", "PUT", "DELETE"]
+    params: Params
+
+
+class LLMMultiResponse(BaseModel):
+    actions: List[LLMResponseSchema]
+    confirmation_message: str

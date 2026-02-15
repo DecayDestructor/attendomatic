@@ -28,6 +28,7 @@ def get_daily_timetable_user(
     )
     results = session.exec(statement)
     timetable = results.all()
+    print(day, timetable)
     if not timetable:
         raise HTTPException(status_code=404, detail="No timetable found for " + day)
     return timetable
@@ -53,6 +54,7 @@ def mark_attendance(
     print(
         f"Marking attendance for user_id: {user_id}, subject_code: {subject_code}, day: {day}, start_time: {start_time}, end_time: {end_time}, status: {status}, classType: {classType}, date_of_slot: {date_of_slot}"
     )
+    # Get the timetable slot for the given parameters
     slot = session.exec(
         select(TimetableSlots).where(
             TimetableSlots.user_id == user_id,
@@ -65,6 +67,7 @@ def mark_attendance(
     ).first()
     if not slot:
         raise HTTPException(status_code=404, detail="Timetable slot not found")
+    # Check if attendance has already been marked for this slot and date along with the same status
     existing_log = session.exec(
         select(AttendanceLog).where(
             AttendanceLog.slot_id == slot.id,
@@ -76,12 +79,14 @@ def mark_attendance(
         raise HTTPException(
             status_code=400, detail="Attendance already marked for this class"
         )
+    # Check if attendance has already been marked for this slot and date with a different status
     previously_marked_log = session.exec(
         select(AttendanceLog).where(
             AttendanceLog.slot_id == slot.id,
             AttendanceLog.date_log == date_of_slot,
         )
     ).first()
+    # Get or create attendance stats for the subject and class type
     attendance = session.exec(
         select(AttendanceStats).where(
             AttendanceStats.user_id == user_id,
@@ -89,6 +94,7 @@ def mark_attendance(
             AttendanceStats.classType == classType,
         )
     ).first()
+
     if not attendance:
         attendance = AttendanceStats(
             user_id=user_id,
@@ -98,6 +104,8 @@ def mark_attendance(
             classType=classType,
         )
         session.add(attendance)
+    # If attendance was previously marked with a different status, we need to reset the counts before marking the new status
+    # We are deleting the previously marked log and adjusting the counts based on its status before marking the new attendance status
     if previously_marked_log:
         if previously_marked_log.status == AttendanceStatus.PRESENT:
             attendance.attended_classes -= 1
@@ -108,12 +116,13 @@ def mark_attendance(
             pass
         session.delete(previously_marked_log)
 
+    # Now we can mark the new attendance status and update the counts accordingly
     attendance_log = AttendanceLog(
         slot_id=slot.id,
         status=status,
         date_log=date_of_slot,
     )
-
+    # Update attendance stats based on the new status
     if status == AttendanceStatus.PRESENT:
         attendance.total_classes += 1
         attendance.attended_classes += 1
