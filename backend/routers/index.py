@@ -1,3 +1,14 @@
+"""
+Index router — the brain of the bot.
+
+1. `read_main`    — Takes a natural-language user message, extracts dates,
+                     builds context (timetable + parsed dates), calls the Groq LLM,
+                     and stores the result as a PendingAction awaiting confirmation.
+
+2. `perform_intent` — Executes confirmed actions by dispatching each intent
+                       to the appropriate CRUD function.
+"""
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from backend.config import settings
@@ -36,13 +47,23 @@ from backend.utils.date_extract import extract_dates_from_shift_message
 def read_main(
     user_message: str, contact_id: str, session: Session = Depends(get_session)
 ):
+    """
+    Parse a natural-language message into structured actions via the Groq LLM.
+
+    Steps:
+    1. Validate user exists.
+    2. Extract date references from the message.
+    3. Fetch the user's full weekly timetable for LLM context.
+    4. Send everything to the LLM and parse the JSON response.
+    5. Store the parsed intent as a PendingAction and return a confirmation message.
+    """
     try:
         user = read_user(contact_id, session)
     except HTTPException as e:
         raise HTTPException(
             status_code=400, detail="User not found. Please register first."
         )
-    # Parse date
+    # Extract date/day phrases from the user's message
     extracted = extract_dates_from_shift_message(user_message)
     all_texts = [x[0] for x in extracted]
     all_dates = [x[1] for x in extracted]
@@ -176,6 +197,7 @@ def read_main(
         },
     ]
 
+    # --- Call Groq LLM with structured JSON output ---
     response = client.chat.completions.create(
         model="moonshotai/kimi-k2-instruct-0905",
         messages=messages,
@@ -187,11 +209,15 @@ def read_main(
             },
         },
     )
+
+    # Validate the LLM's JSON output against our Pydantic schema
     review = LLMMultiResponse.model_validate(
         json.loads(response.choices[0].message.content)
     )
 
     print("LLM Response:", review)
+
+    # Store as a pending action so the user can confirm before execution
     create_pending_action(
         confirmation_message=review.confirmation_message,
         review=review,
@@ -210,6 +236,13 @@ def perform_intent(
     session: Session,
     review: LLMMultiResponse | dict = None,
 ):
+    """
+    Execute each action in the confirmed LLM response.
+
+    Iterates over review.actions and dispatches to the matching CRUD function
+    (create_subject, add_slot, mark_attendance, etc.).  Collects per-action
+    success/failure messages and returns them joined.
+    """
     final_response = []
 
     try:

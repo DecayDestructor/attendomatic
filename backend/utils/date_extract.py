@@ -1,3 +1,11 @@
+"""
+Natural-language date extraction utility.
+
+Uses regex + parsedatetime to pull date/day references out of messages
+(e.g. "tomorrow", "next Monday", "27th October 2025") and resolve them
+to Python datetime objects.  Supports possessives ("tomorrow's").
+"""
+
 import re
 import parsedatetime as pdt
 from datetime import datetime
@@ -7,13 +15,14 @@ cal = pdt.Calendar()
 
 def extract_dates_from_shift_message(message: str, base: datetime = None):
     """
-    Extract dates and day references including possessives
-    (like "tomorrow's", "Monday's", etc.)
+    Recursively extract all date/day phrases from a message.
 
-    Supports:
+    Returns a list of (matched_text, parsed_datetime) tuples.
+
+    Supported patterns:
     - Weekdays: Monday, Tuesday, etc. (with optional next/last/this)
-    - Relative: today, tomorrow, yesterday
-    - Dates: 27th October 2025, 15 Nov, etc.
+    - Relative words: today, tomorrow, yesterday
+    - Explicit dates: 27th October 2025, 15 Nov, etc.
     - Possessives: tomorrow's, Monday's, etc.
     """
     if not message or not message.strip():
@@ -22,7 +31,7 @@ def extract_dates_from_shift_message(message: str, base: datetime = None):
     if base is None:
         base = datetime.now()
 
-    # Regex for dates and days only
+    # Regex pattern matching day names, relative words, and explicit date formats
     date_pattern = re.compile(
         r"\b(?:on\s+)?("  # optional "on"
         r"(?:next|last|this)?\s*"  # optional modifiers
@@ -39,14 +48,14 @@ def extract_dates_from_shift_message(message: str, base: datetime = None):
 
     date_text = match.group(1).strip()
 
-    # Parse using parsedatetime
+    # Use parsedatetime to resolve the matched text to a datetime
     parsed_dt, success = cal.parseDT(date_text, base)
     if not success:
-        # Skip and continue with remaining text
+        # If parsing failed, skip this match and continue with the rest
         remaining_text = message[match.end() :]
         return extract_dates_from_shift_message(remaining_text, base=base)
 
-    # Recurse on remaining text
+    # Recurse on the remaining text after the matched portion
     remaining_text = message[match.end() :]
     remaining_dates = extract_dates_from_shift_message(remaining_text, base=base)
 

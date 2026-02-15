@@ -1,3 +1,13 @@
+"""
+Attendance router — CRUD endpoints for subjects, timetable slots, and attendance.
+
+Provides REST API routes for:
+- Creating / deleting subjects
+- Adding / updating / deleting timetable slots
+- Marking attendance
+- Fetching daily timetable and attendance stats
+"""
+
 from fastapi import APIRouter, Depends, HTTPException
 from requests import session
 from backend.db.database import get_session
@@ -13,9 +23,12 @@ import json
 router = APIRouter()
 
 
-# POST ROUTES
+# ──────────── POST ROUTES ────────────
+
+
 @router.post("/create_subject")
 def create_subject(subject: Subjects, session: Session = Depends(get_session)):
+    """Create a new subject. Fails if code or name already exists."""
     existing_subject = session.exec(
         select(Subjects).where(
             (Subjects.subject_code == subject.subject_code)
@@ -35,7 +48,8 @@ def create_subject(subject: Subjects, session: Session = Depends(get_session)):
 
 @router.post("/add_slot")
 def add_slot(slots: TimetableSlots, session: Session = Depends(get_session)):
-    # check for conflicting slots
+    """Add a new timetable slot. Rejects if it overlaps with an existing slot."""
+    # Check for time-overlapping slots on the same day for this user
     conflict = session.exec(
         select(TimetableSlots).where(
             TimetableSlots.user_id == slots.user_id,
@@ -71,6 +85,7 @@ def mark_attendance_route(
     classType: ClassType,
     session: Session = Depends(get_session),
 ):
+    """Mark attendance for a specific slot. Delegates to the utility function."""
     attendance_log = mark_attendance(
         user_id,
         subject_code,
@@ -87,7 +102,8 @@ def mark_attendance_route(
     }
 
 
-# GET ROUTES
+# ──────────── GET ROUTES ────────────
+
 
 from backend.db.models import DayEnum
 
@@ -96,6 +112,7 @@ from backend.db.models import DayEnum
 def get_daily_timetable(
     user_id: int, day: DayEnum, session: Session = Depends(get_session)
 ):
+    """Return all timetable slots for a user on a given day."""
     return get_daily_timetable_user(user_id, day, session)
 
 
@@ -106,6 +123,12 @@ def get_attendance_stats(
     subject_code: str | None = None,
     classType: ClassType | None = None,
 ):
+    """
+    Return attendance stats for a user.
+
+    If subject_code and classType are provided, returns stats for that
+    specific combination; otherwise returns all records for the user.
+    """
     records = []
     if subject_code:
         attendance_record = session.exec(
@@ -135,7 +158,9 @@ def get_attendance_stats(
     return attendance_records
 
 
-# PUT ROUTES
+# ──────────── PUT ROUTES ────────────
+
+
 @router.put("/update_slot/{slot_id}")
 def update_slot(
     user_id: int,
@@ -147,6 +172,12 @@ def update_slot(
     updated_slot: TimetableSlots,
     session: Session = Depends(get_session),
 ):
+    """
+    Update an existing timetable slot.
+
+    Finds the slot by (user_id, day, start_time, end_time, classType, subject_code),
+    checks for conflicts with the new values, then applies the update.
+    """
     slot = session.exec(
         select(TimetableSlots).where(
             TimetableSlots.user_id == user_id,
@@ -185,11 +216,14 @@ def update_slot(
     return {"message": "Timetable slot updated successfully!"}
 
 
-# DELETE ROUTES
-@router.delete("/delete_subject")  # delete a single subject
+# ──────────── DELETE ROUTES ────────────
+
+
+@router.delete("/delete_subject")
 def delete_subject(
     user: User, subject_code: str, session: Session = Depends(get_session)
 ):
+    """Delete a subject. Only users with adminStatus=True may perform this."""
     if not user.adminStatus:
         raise HTTPException(status_code=403, detail="Only admins can delete subjects")
     subject = session.exec(
@@ -202,7 +236,7 @@ def delete_subject(
     return {"message": f"Subject with code '{subject_code}' deleted successfully!"}
 
 
-@router.delete("/delete_slot/{slot_id}")  # delete a single timetable slot
+@router.delete("/delete_slot/{slot_id}")
 def delete_slot(
     user_id: int,
     subject_code: str,
@@ -212,6 +246,7 @@ def delete_slot(
     classType: ClassType,
     session: Session = Depends(get_session),
 ):
+    """Delete a single timetable slot identified by its composite key."""
     slot = session.exec(
         select(TimetableSlots).where(
             TimetableSlots.user_id == user_id,

@@ -1,3 +1,10 @@
+"""
+Manual test script for the Telegram webhook endpoint.
+
+Sends a simulated Telegram message update to the deployed webhook URL
+to verify the endpoint is responding correctly.
+"""
+
 import requests
 
 url = "https://attendomatic.onrender.com/adapters/telegram/webhook"

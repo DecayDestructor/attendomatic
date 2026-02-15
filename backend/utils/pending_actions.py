@@ -1,3 +1,11 @@
+"""
+Pending action CRUD for the confirmation flow.
+
+Before executing any LLM-parsed intent, the bot stores it as a PendingAction
+(status='pending').  The user's next reply (yes/no) triggers confirm/cancel.
+Pending actions expire automatically after 5 minutes.
+"""
+
 from fastapi import Depends
 from sqlmodel import Session, select
 from datetime import datetime
@@ -6,13 +14,13 @@ from backend.db.models import PendingAction
 from backend.routers.index import LLMMultiResponse
 
 
-# CREATE
 def create_pending_action(
     contact_id: str,
     review: LLMMultiResponse,
     confirmation_message: str,
     session: Session,
 ):
+    """Store a new pending action, cancelling any existing one for this user."""
     existing_pending = get_pending_action(contact_id, session)
     if existing_pending:
         print("Existing pending action found, cancelling it:", existing_pending)
@@ -31,11 +39,11 @@ def create_pending_action(
     return pending
 
 
-# READ
 def get_pending_action(
     contact_id: str,
     session: Session,
 ):
+    """Return the active (non-expired) pending action for a user, or None."""
 
     statement = select(PendingAction).where(
         PendingAction.contact_id == contact_id,
@@ -46,11 +54,11 @@ def get_pending_action(
     return session.exec(statement).first()
 
 
-# CONFIRM
 def confirm_pending_action(
     pending: PendingAction,
     session: Session,
 ):
+    """Mark a pending action as confirmed (user replied yes)."""
 
     pending.status = "confirmed"
 
@@ -58,11 +66,11 @@ def confirm_pending_action(
     session.commit()
 
 
-# CANCEL
 def cancel_pending_action(
     pending: PendingAction,
     session: Session,
 ):
+    """Mark a pending action as cancelled (user replied no / timed out)."""
 
     pending.status = "cancelled"
 

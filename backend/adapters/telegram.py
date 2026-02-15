@@ -1,3 +1,17 @@
+"""
+Telegram adapter — webhook receiver and message handler.
+
+Exposes endpoints to:
+- Receive Telegram webhook updates  (POST /webhook)
+- Register / delete the webhook URL  (GET /set-webhook, /delete-webhook)
+
+Message flow:
+1. Telegram sends an update to /webhook.
+2. `process_message` checks for pending actions (yes/no confirmation).
+3. If no pending action, the message is sent to the LLM via `read_main`.
+4. A confirmation prompt is sent back to the user.
+"""
+
 from fastapi import APIRouter, Header, Request, HTTPException
 from teleapi.httpx_transport import httpx_teleapi_factory
 from backend.config import settings
@@ -10,10 +24,11 @@ from sqlmodel import Session
 from backend.utils.verify_secret_token import verify_secret_header
 
 router = APIRouter()
-bot = httpx_teleapi_factory(settings.TELEGRAM_BOT_KEY)
+bot = httpx_teleapi_factory(settings.TELEGRAM_BOT_KEY)  # Telegram bot API client
 
 
 def get_db_session():
+    """Create a one-off DB session (used outside of FastAPI dependency injection)."""
     return next(get_session())
 
 
@@ -27,7 +42,13 @@ from backend.routers.index import LLMMultiResponse, perform_intent
 
 
 async def process_message(message: dict):
-    """Handle a Telegram message object from webhook"""
+    """
+    Handle a single incoming Telegram message.
+
+    - If the user has a pending action, treats the message as a yes/no confirmation.
+    - Otherwise, sends the text through the LLM pipeline (read_main) and
+      stores the result as a new pending action awaiting confirmation.
+    """
     if not message or "text" not in message:
         return
 
@@ -45,7 +66,8 @@ async def process_message(message: dict):
     try:
         user = read_user(str(user_contact_id), session)
         print(f"Received message from user {user.name} ({user_contact_id}): {text}")
-        # check if there is a pending action for this user, if yes, confirm it and perform the action
+
+        # --- Check for an existing pending action (confirmation flow) ---
         get_pending = get_pending_action(str(user_contact_id), session)
         if get_pending:
             if text.lower() in ["yes", "y"]:
@@ -68,6 +90,7 @@ async def process_message(message: dict):
                 cancel_pending_action(get_pending, session)
                 bot.sendMessage(chat_id=chat_id, text="Action cancelled.")
             return
+        # --- No pending action — run the message through the LLM pipeline ---
         try:
             response = read_main(text, str(user_contact_id), session)
             review = response.get("review")
@@ -75,12 +98,13 @@ async def process_message(message: dict):
         except Exception as e:
             print("There was an error:", e)
             response = {"error": str(e)}
+        # Send the confirmation prompt back to the user
         response_text = response.get(
             "confirmation_message", "There was an error processing your request."
         )
         print(f"Sending response to user {contact_id}: {response_text}")
         bot.sendMessage(chat_id=chat_id, text=response_text)
-        # receive a yes or no answer from the user and if yes, perform the action, if no, cancel the action
+        # User's next message will be handled by the pending-action branch above
     except Exception as e:
         print("Error processing message:", e)
         bot.sendMessage(chat_id=chat_id, text="Sorry, I couldn't find you.")
