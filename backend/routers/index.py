@@ -26,6 +26,7 @@ from backend.routers.attendanceRouter import (
 from backend.utils.attendanceManagement import (
     get_daily_timetable_user,
     mark_attendance,
+    get_attendance_logs,
 )
 from backend.utils.userManagement import read_user
 from backend.utils.pending_actions import *
@@ -116,7 +117,8 @@ def read_main(
                 "- update_slot\n"
                 "- get_daily_timetable\n"
                 "- get_attendance_stats\n"
-                "- delete_subject\n\n"
+                "- delete_subject\n"
+                "- get_attendance_logs_for_date\n\n"
                 "=== DAY ENUM RULE ===\n"
                 "If day_of_slot is present, it MUST be exactly one of:\n"
                 "- Mon\n"
@@ -169,6 +171,11 @@ def read_main(
                 "If user asks for attendance stats:\n"
                 "- Use intent='get_attendance_stats'\n"
                 "- DO NOT include stats in confirmation_message\n\n"
+                "=== ATTENDANCE LOGS FOR DATE RULE ===\n"
+                "If user asks what classes they attended/missed on a specific date:\n"
+                "- Use intent='get_attendance_logs_for_date'\n"
+                "- Requires date_of_slot and day_of_slot\n"
+                "- DO NOT include log data in confirmation_message\n\n"
                 "=== CONFUSION RULE ===\n"
                 "Set confusion_flag=True ONLY if instruction is ambiguous or invalid.\n\n"
                 "=== OUTPUT RULES ===\n"
@@ -341,7 +348,7 @@ def perform_intent(
                 )
             except HTTPException as e:
                 final_response.append(
-                    f"Failed to mark attendance for {item.params.subject_code} {item.params.classType}. {e.detail}"
+                    f"Failed to mark attendance for {item.params.subject_code} {item.params.classType.value}. {e.detail}"
                 )
         elif function_call == IntentEnum.GET_DAILY_TIMETABLE:
             try:
@@ -350,17 +357,17 @@ def perform_intent(
                 )
                 if not timetable:
                     final_response.append(
-                        f"No timetable available for {item.params.day_of_slot}."
+                        f"No timetable available for {item.params.day_of_slot.value}."
                     )
                 else:
                     timetable_str = "\n".join(
                         [
-                            f"{idx+1}. {slot.start_time}-{slot.end_time} {slot.subject_code} - {slot.class_type}"
+                            f"{idx+1}. {slot.start_time}-{slot.end_time} {slot.subject_code} - {slot.class_type.value}"
                             for idx, slot in enumerate(timetable)
                         ]
                     )
                     final_response.append(
-                        f"Timetable for {item.params.day_of_slot}:\n{timetable_str}"
+                        f"Timetable for {item.params.day_of_slot.value}:\n{timetable_str}"
                     )
             except HTTPException as e:
                 final_response.append(f"Failed to retrieve timetable. {e.detail}")
@@ -403,7 +410,7 @@ def perform_intent(
                 )
                 for record in attendance_record:
                     final_response.append(
-                        f"Attendance stats for {record.subject_code} {record.classType}: {record.total_classes} total classes, {record.attended_classes} attended classes."
+                        f"Attendance stats for {record.subject_code} {record.classType.value}: {record.total_classes} total classes, {record.attended_classes} attended classes."
                     )
             except HTTPException as e:
                 final_response.append(
@@ -425,6 +432,30 @@ def perform_intent(
                 )
             except HTTPException as e:
                 final_response.append(f"Failed to delete slot. {e.detail}")
+        elif function_call == IntentEnum.GET_ATTENDANCE_LOGS_FOR_DATE:
+            try:
+                logs = get_attendance_logs(
+                    user_id=user.id,
+                    date=item.params.date_of_slot,
+                    session=session,
+                )
+                if not logs:
+                    final_response.append(
+                        f"No attendance records found for {item.params.date_of_slot}."
+                    )
+                else:
+                    logs_str = "\n".join(
+                        [
+                            f"{idx+1}. {log['slot']['subject_code']} ({log['slot']['class_type']}) "
+                            f"{log['slot']['start_time']}-{log['slot']['end_time']} — {log['attendance']['status']}"
+                            for idx, log in enumerate(logs)
+                        ]
+                    )
+                    final_response.append(
+                        f"Attendance on {item.params.date_of_slot}:\n{logs_str}"
+                    )
+            except HTTPException as e:
+                final_response.append(f"Failed to retrieve attendance logs. {e.detail}")
         elif item.params.confusion_flag:
             final_response.append(
                 f"I'm sorry, I couldn't understand your request regarding the following request: {item}. Could you please clarify?"

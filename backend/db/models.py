@@ -195,6 +195,7 @@ class IntentEnum(str, Enum):
     DELETE_SUBJECT = "delete_subject"
     DELETE_SLOT = "delete_slot"
     TEMPORARY_SLOT = "temporary_slot"
+    GET_ATTENDANCE_LOGS_FOR_DATE = "get_attendance_logs_for_date"
 
 
 # ───────────────────────────────────────────────

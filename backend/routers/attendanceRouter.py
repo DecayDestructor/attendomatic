@@ -15,6 +15,7 @@ from sqlmodel import Session, select
 from backend.db.models import *
 from backend.utils.userManagement import read_user
 from backend.utils.attendanceManagement import (
+    get_attendance_logs,
     get_daily_timetable_user,
     mark_attendance,
 )
@@ -267,3 +268,15 @@ def delete_slot(
     session.delete(slot)
     session.commit()
     return {"message": "Timetable slot deleted successfully!"}
+
+
+@router.get("/attendance_log_for_date")
+def get_attendance_log_for_date(
+    user_id: int, date_of_slot: date, session: Session = Depends(get_session)
+):
+    """Return all attendance logs for a user on a specific date."""
+    logs = get_attendance_logs(user_id, date_of_slot, session)
+    print(
+        f"Queried attendance logs for user_id={user_id} on date={date_of_slot}: {logs}"
+    )
+    return logs

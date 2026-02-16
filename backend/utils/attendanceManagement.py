@@ -9,6 +9,7 @@ and the LLM intent dispatcher:
 """
 
 from fastapi import APIRouter, Depends, HTTPException
+from requests import session
 from backend.db.database import get_session
 from sqlmodel import Session, select
 from backend.db.models import (
@@ -175,3 +176,34 @@ def mark_attendance(
     session.refresh(attendance_log)
     session.refresh(attendance)
     return attendance_log
+
+
+def get_attendance_logs(
+    user_id: int, date: date, session: Session = Depends(get_session)
+):
+    """
+    Retrieve all attendance logs for a user on a specific date.
+    """
+    try:
+        logs = session.exec(
+            select(TimetableSlots, AttendanceLog)
+            .join(AttendanceLog, AttendanceLog.slot_id == TimetableSlots.id)
+            .where(
+                TimetableSlots.user_id == user_id,
+                AttendanceLog.date_log == date,
+            )
+        )
+        print(logs)
+        result = [
+            {
+                "slot": slot.model_dump(mode="json"),
+                "attendance": attendance.model_dump(mode="json"),
+            }
+            for slot, attendance in logs
+        ]
+    except Exception as e:
+        print(f"Error retrieving attendance logs: {e}")
+        raise HTTPException(
+            status_code=500, detail="Failed to retrieve attendance logs"
+        )
+    return result
