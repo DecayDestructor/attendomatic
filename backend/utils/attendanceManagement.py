@@ -43,6 +43,13 @@ def get_daily_timetable_user(
     )
     results = session.exec(statement)
     timetable = results.all()
+    # temporary_slots = session.exec(
+    #     select(TimetableSlots).where(
+    #         TimetableSlots.user_id == user_id,
+    #         TimetableSlots.day == day,
+    #         TimetableSlots.is_temporary == True,
+    #     )
+    # ).all()
     print(day, timetable)
     if not timetable:
         raise HTTPException(status_code=404, detail="No timetable found for " + day)
