@@ -74,7 +74,7 @@ async def process_message(message: dict):
             None  # Initialize message variable for error handling in confirmation flow
         )
         if get_pending:
-            if text.lower() in ["yes", "y"]:
+            if text.lower() in ["yes", "y", "yep", "confirm", "yez", "yeah", "correct"]:
                 confirm_pending_action(get_pending, session)
                 print("Performing intent for pending action:", get_pending.intent_json)
                 try:
@@ -86,12 +86,13 @@ async def process_message(message: dict):
                     bot.sendMessage(chat_id=chat_id, text=message)
                 except Exception as e:
                     print("Error performing intent for pending action:", e)
+                    # Send an error message to the user, explaining the error if possible
                     bot.sendMessage(
                         chat_id=chat_id,
                         text=(
                             message
                             if message
-                            else "There was an error performing the action."
+                            else f"There was an error performing the action: {e.detail if hasattr(e, 'detail') else str(e)}"
                         ),
                     )
             else:

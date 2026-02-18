@@ -6,7 +6,7 @@ Before executing any LLM-parsed intent, the bot stores it as a PendingAction
 Pending actions expire automatically after 5 minutes.
 """
 
-from fastapi import Depends
+from fastapi import Depends, HTTPException
 from sqlmodel import Session, select
 from datetime import datetime
 from backend.db.database import get_session
@@ -21,6 +21,12 @@ def create_pending_action(
     session: Session,
 ):
     """Store a new pending action, cancelling any existing one for this user."""
+    if not contact_id:
+        raise HTTPException(status_code=400, detail="Missing contact_id")
+    if not review:
+        raise HTTPException(status_code=400, detail="Missing review (LLM response)")
+    if not confirmation_message:
+        raise HTTPException(status_code=400, detail="Missing confirmation_message")
     existing_pending = get_pending_action(contact_id, session)
     if existing_pending:
         print("Existing pending action found, cancelling it:", existing_pending)
@@ -44,6 +50,8 @@ def get_pending_action(
     session: Session,
 ):
     """Return the active (non-expired) pending action for a user, or None."""
+    if not contact_id:
+        raise HTTPException(status_code=400, detail="Missing contact_id")
 
     statement = select(PendingAction).where(
         PendingAction.contact_id == contact_id,

@@ -35,6 +35,10 @@ def create_subject(
     session: Session = Depends(get_session),
 ):
     """Create a new subject. Fails if code or name already exists."""
+    if not subject.subject_code:
+        raise HTTPException(status_code=400, detail="Missing subject_code")
+    if not subject.subject_name:
+        raise HTTPException(status_code=400, detail="Missing subject_name")
     existing_subject = session.exec(
         select(Subjects).where(
             (Subjects.subject_code == subject.subject_code)
@@ -55,6 +59,32 @@ def create_subject(
 @router.post("/add_slot")
 def add_slot(slots: TimetableSlots, session: Session = Depends(get_session)):
     """Add a new timetable slot. Rejects if it overlaps with an existing slot."""
+    if not slots.user_id:
+        raise HTTPException(status_code=400, detail="Missing user_id")
+    if not slots.day:
+        raise HTTPException(status_code=400, detail="Missing day")
+    if not slots.start_time:
+        raise HTTPException(status_code=400, detail="Missing start_time")
+    if not slots.end_time:
+        raise HTTPException(status_code=400, detail="Missing end_time")
+    if slots.start_time >= slots.end_time:
+        raise HTTPException(
+            status_code=400,
+            detail=f"start_time ({slots.start_time}) must be before end_time ({slots.end_time})",
+        )
+    if not slots.subject_code:
+        raise HTTPException(status_code=400, detail="Missing subject_code")
+    if not slots.class_type:
+        raise HTTPException(status_code=400, detail="Missing class_type")
+    # Verify the subject exists in the database
+    subject_exists = session.exec(
+        select(Subjects).where(Subjects.subject_code == slots.subject_code)
+    ).first()
+    if not subject_exists:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Subject '{slots.subject_code}' does not exist. Create it first.",
+        )
     # Check for time-overlapping slots on the same day for this user
     conflict = session.exec(
         select(TimetableSlots).where(
@@ -135,6 +165,13 @@ def get_attendance_stats(
     If subject_code and classType are provided, returns stats for that
     specific combination; otherwise returns all records for the user.
     """
+    if not user_id:
+        raise HTTPException(status_code=400, detail="Missing user_id")
+    if subject_code and not classType:
+        raise HTTPException(
+            status_code=400,
+            detail="classType is required when filtering by subject_code",
+        )
     records = []
     if subject_code:
         attendance_record = session.exec(
@@ -184,6 +221,29 @@ def update_slot(
     Finds the slot by (user_id, day, start_time, end_time, classType, subject_code),
     checks for conflicts with the new values, then applies the update.
     """
+    if not user_id:
+        raise HTTPException(status_code=400, detail="Missing user_id")
+    if not day:
+        raise HTTPException(status_code=400, detail="Missing day")
+    if not start_time:
+        raise HTTPException(status_code=400, detail="Missing start_time")
+    if not end_time:
+        raise HTTPException(status_code=400, detail="Missing end_time")
+    if not classType:
+        raise HTTPException(status_code=400, detail="Missing classType")
+    if not subject_code:
+        raise HTTPException(status_code=400, detail="Missing subject_code")
+    if not updated_slot:
+        raise HTTPException(status_code=400, detail="Missing updated_slot data")
+    if (
+        updated_slot.start_time
+        and updated_slot.end_time
+        and updated_slot.start_time >= updated_slot.end_time
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Updated start_time ({updated_slot.start_time}) must be before end_time ({updated_slot.end_time})",
+        )
     slot = session.exec(
         select(TimetableSlots).where(
             TimetableSlots.user_id == user_id,
@@ -230,6 +290,8 @@ def delete_subject(
     user: User, subject_code: str, session: Session = Depends(get_session)
 ):
     """Delete a subject. Only users with adminStatus=True may perform this."""
+    if not subject_code:
+        raise HTTPException(status_code=400, detail="Missing subject_code")
     if not user.adminStatus:
         raise HTTPException(status_code=403, detail="Only admins can delete subjects")
     subject = session.exec(
@@ -253,6 +315,18 @@ def delete_slot(
     session: Session = Depends(get_session),
 ):
     """Delete a single timetable slot identified by its composite key."""
+    if not user_id:
+        raise HTTPException(status_code=400, detail="Missing user_id")
+    if not subject_code:
+        raise HTTPException(status_code=400, detail="Missing subject_code")
+    if not day:
+        raise HTTPException(status_code=400, detail="Missing day")
+    if not start_time:
+        raise HTTPException(status_code=400, detail="Missing start_time")
+    if not end_time:
+        raise HTTPException(status_code=400, detail="Missing end_time")
+    if not classType:
+        raise HTTPException(status_code=400, detail="Missing classType")
     slot = session.exec(
         select(TimetableSlots).where(
             TimetableSlots.user_id == user_id,
@@ -275,6 +349,10 @@ def get_attendance_log_for_date(
     user_id: int, date_of_slot: date, session: Session = Depends(get_session)
 ):
     """Return all attendance logs for a user on a specific date."""
+    if not user_id:
+        raise HTTPException(status_code=400, detail="Missing user_id")
+    if not date_of_slot:
+        raise HTTPException(status_code=400, detail="Missing date_of_slot")
     logs = get_attendance_logs(user_id, date_of_slot, session)
     print(
         f"Queried attendance logs for user_id={user_id} on date={date_of_slot}: {logs}"

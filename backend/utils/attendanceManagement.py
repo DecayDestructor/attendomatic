@@ -36,6 +36,15 @@ def get_daily_timetable_user(
     user_id: int, day: DayEnum, session: Session = Depends(get_session)
 ):
     """Return the user's non-temporary timetable slots for a given day of the week."""
+    if not user_id:
+        raise HTTPException(status_code=400, detail="Missing user_id")
+    if not day:
+        raise HTTPException(status_code=400, detail="Missing day")
+    if day not in DayEnum.__members__.values():
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid day '{day}'. Must be one of: {', '.join(d.value for d in DayEnum)}",
+        )
     statement = select(TimetableSlots).where(
         TimetableSlots.user_id == user_id,
         TimetableSlots.day == day,
@@ -84,9 +93,21 @@ def mark_attendance(
       incrementally based on the new status.
     """
     # print everything
-    print(
-        f"Marking attendance for user_id: {user_id}, subject_code: {subject_code}, day: {day}, start_time: {start_time}, end_time: {end_time}, status: {status}, classType: {classType}, date_of_slot: {date_of_slot}"
-    )
+    # check for every parameter and raise error of missing parameter
+    if not user_id:
+        raise HTTPException(status_code=400, detail="Missing user_id")
+    if not subject_code:
+        raise HTTPException(status_code=400, detail="Missing subject_code")
+    if not day:
+        raise HTTPException(status_code=400, detail="Missing day")
+    if not start_time:
+        raise HTTPException(status_code=400, detail="Missing start_time")
+    if not end_time:
+        raise HTTPException(status_code=400, detail="Missing end_time")
+    if not status:
+        raise HTTPException(status_code=400, detail="Missing status")
+    if not classType:
+        raise HTTPException(status_code=400, detail="Missing classType")
     # Get the timetable slot for the given parameters
     slot = session.exec(
         select(TimetableSlots).where(
@@ -191,6 +212,10 @@ def get_attendance_logs(
     """
     Retrieve all attendance logs for a user on a specific date.
     """
+    if not user_id:
+        raise HTTPException(status_code=400, detail="Missing user_id")
+    if not date:
+        raise HTTPException(status_code=400, detail="Missing date")
     try:
         logs = session.exec(
             select(TimetableSlots, AttendanceLog)

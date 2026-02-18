@@ -186,10 +186,13 @@ def read_main(
                 "- end_time=null\n"
                 "- backend will handle temporary slot creation\n\n"
                 "=== TEMPORARY SLOT RULES ===\n"
-                "If lecture does not exist in timetable:\n"
+                "If the subject+classType combination does NOT exist in the user's timetable FOR THAT SPECIFIC DAY:\n"
                 "- STILL use intent='mark_attendance'\n"
                 "- DO NOT use add_slot\n"
-                "- DO NOT set confusion_flag\n\n"
+                "- DO NOT set confusion_flag\n"
+                "- start_time and end_time will be null\n"
+                "- In confirmation_message, you MUST explicitly state that this class is NOT in the timetable for that day and a TEMPORARY slot will be created.\n"
+                "- Example: 'BDA lab is not in your timetable for Tuesday. A temporary slot will be created and attendance will be marked as attended on Tuesday, 17 February 2026. Is that correct?'\n\n"
                 "=== TIMETABLE REQUEST RULE ===\n"
                 "If user asks to see timetable:\n"
                 "- Use intent='get_daily_timetable'\n"
@@ -212,9 +215,40 @@ def read_main(
                 "=== CONFIRMATION MESSAGE RULE ===\n"
                 "confirmation_message MUST ONLY confirm intent.\n"
                 "DO NOT provide timetable data.\n"
-                "DO NOT provide attendance stats.\n\n"
-                "Correct example:\n"
-                "'You want me to mark your BDA lab today (17 February 2026) as attended. Is that correct?'\n"
+                "DO NOT provide attendance stats.\n"
+                "DO NOT provide attendance logs.\n\n"
+                "The confirmation MUST be PRECISE and include ALL relevant details so the user can verify:\n\n"
+                "For mark_attendance:\n"
+                "- Subject code\n"
+                "- Class type (lecture/lab/tutorial)\n"
+                "- Full date (e.g. 17 February 2026) and day (e.g. Tuesday)\n"
+                "- Time slot (start-end) if available in timetable\n"
+                "- Status (attended/bunked/cancelled)\n"
+                "- Whether a temporary slot will be created (if not in timetable)\n"
+                "Example: 'Mark BDA lab on Tuesday, 17 February 2026 (09:00-11:00) as attended. Confirm?'\n\n"
+                "For create_subject:\n"
+                "- Subject code and subject name\n"
+                "Example: 'Create subject BDA (Big Data Analytics). Confirm?'\n\n"
+                "For add_slot:\n"
+                "- Subject code, class type, day, start time, end time\n"
+                "Example: 'Add BDA lab slot on Tuesday from 09:00 to 11:00. Confirm?'\n\n"
+                "For update_slot:\n"
+                "- What is being updated and from what to what\n"
+                "Example: 'Update BDA lab on Tuesday from 09:00-11:00 to 10:00-12:00. Confirm?'\n\n"
+                "For delete_subject:\n"
+                "- Subject code\n"
+                "Example: 'Delete subject BDA and all its slots. Confirm?'\n\n"
+                "For get_daily_timetable:\n"
+                "- Day being requested\n"
+                "Example: 'Fetch your timetable for Tuesday. Confirm?'\n\n"
+                "For get_attendance_stats:\n"
+                "- Subject code if specified, or 'all subjects'\n"
+                "Example: 'Fetch attendance stats for BDA. Confirm?'\n\n"
+                "For get_attendance_logs_for_date:\n"
+                "- Full date\n"
+                "Example: 'Fetch attendance logs for 17 February 2026. Confirm?'\n\n"
+                "For MULTIPLE actions, list each action as a numbered item.\n"
+                "Example: '1. Mark BDA lab on Tue, 17 Feb 2026 (09:00-11:00) as attended.\\n2. Mark OS lecture on Tue, 17 Feb 2026 (11:00-12:00) as bunked.\\nConfirm?'\n"
             ),
         },
         {
@@ -358,8 +392,20 @@ def perform_intent(
                     session=session,
                     date_of_slot=old_date,
                 )
+                is_temp = (
+                    item.params.start_time is None and item.params.end_time is None
+                )
+                day_name = (
+                    item.params.day_of_slot.value if item.params.day_of_slot else ""
+                )
+                temp_note = (
+                    f" (not in timetable for {day_name} — temporary slot created)"
+                    if is_temp
+                    else ""
+                )
                 final_response.append(
-                    f"Attendance marked successfully for {item.params.subject_code} "
+                    f"Attendance marked as {item.params.status.value} for {item.params.subject_code} "
+                    f"({item.params.classType.value}) on {item.params.date_of_slot}{temp_note}."
                 )
             except HTTPException as e:
                 final_response.append(
