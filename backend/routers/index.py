@@ -278,7 +278,7 @@ def read_main(
 
     # --- Call Groq LLM with structured JSON output ---
     response = client.chat.completions.create(
-        model="moonshotai/kimi-k2-instruct-0905",
+        model="openai/gpt-oss-120b",
         messages=messages,
         response_format={
             "type": "json_schema",
