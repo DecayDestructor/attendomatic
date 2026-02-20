@@ -42,6 +42,21 @@ from backend.utils.pending_actions import (
 from backend.routers.index import LLMMultiResponse, perform_intent
 
 
+HELP_TEXT = (
+    "Attendomatic — your AI attendance assistant.\n\n"
+    "Just type what you need in plain English:\n\n"
+    "📝 ATTENDANCE\n"
+    '• "I attended DC lecture today"\n'
+    '• "I bunked BDA lab on Monday"\n'
+    '• "OS was cancelled yesterday"\n\n'
+    "📅 TIMETABLE\n"
+    '• "Add DC lecture on Tue 11:00 to 12:00"\n'
+    '• "Change DC on Tue to 10:00-11:00"\n\n'
+    "Confirms before every action. Reply yes or no.\n\n"
+    "📖 Full docs: github.com/DecayDestructor/attendomatic"
+)
+
+
 async def process_message(message: dict):
     """
     Handle a single incoming Telegram message.
@@ -62,6 +77,11 @@ async def process_message(message: dict):
 
     if is_telegram_bot_down():
         bot.sendMessage(chat_id=chat_id, text="Sorry, bot is temporarily down.")
+        return
+
+    # Handle /start and /help commands
+    if text.strip().lower() in ["/start", "/help"]:
+        bot.sendMessage(chat_id=chat_id, text=HELP_TEXT)
         return
 
     try:
@@ -154,8 +174,6 @@ async def telegram_webhook(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-
-
 @router.get("/set-webhook")
 async def set_webhook(_=Depends(verify_api_secret)):
     """Manually set the Telegram webhook (requires API key)"""
@@ -175,6 +193,3 @@ async def delete_webhook(_=Depends(verify_api_secret)):
         return {"status": "Webhook deleted"}
     except Exception as e:
         return {"status": "Failed", "error": str(e)}
-
-
-
