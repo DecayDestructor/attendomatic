@@ -53,6 +53,7 @@ HELP_TEXT = (
     '• "Add DC lecture on Tue 11:00 to 12:00"\n'
     '• "Change DC on Tue to 10:00-11:00"\n\n'
     "Confirms before every action. Reply yes or no.\n\n"
+    "Ofcourse this is just a pinch of what it can do, refer the docs to know what more it can do! \n\n"
     "📖 Full docs: github.com/DecayDestructor/attendomatic"
 )
 
