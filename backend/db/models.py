@@ -81,7 +81,6 @@ class TimetableSlots(SQLModel, table=True):
     """
 
     __tablename__ = "timetable_slots"
-    __table_args__ = (UniqueConstraint("user_id", "day", "start_time", "end_time"),)
     id: int | None = Field(default=None, primary_key=True)
     user_id: int = Field(foreign_key="users.id", ondelete="CASCADE")
     day: DayEnum = Field(index=True)

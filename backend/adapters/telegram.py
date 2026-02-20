@@ -154,6 +154,8 @@ async def telegram_webhook(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+
+
 @router.get("/set-webhook")
 async def set_webhook(_=Depends(verify_api_secret)):
     """Manually set the Telegram webhook (requires API key)"""
@@ -173,3 +175,6 @@ async def delete_webhook(_=Depends(verify_api_secret)):
         return {"status": "Webhook deleted"}
     except Exception as e:
         return {"status": "Failed", "error": str(e)}
+
+
+
