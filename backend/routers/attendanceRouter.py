@@ -85,6 +85,8 @@ def add_slot(slots: TimetableSlots, session: Session = Depends(get_session)):
             status_code=404,
             detail=f"Subject '{slots.subject_code}' does not exist. Create it first.",
         )
+
+    # if the slot is temporary, we skip the conflict check since it's only for one day and won't affect the regular timetable
     # Check for time-overlapping slots on the same day for this user
     conflict = session.exec(
         select(TimetableSlots).where(
@@ -92,10 +94,11 @@ def add_slot(slots: TimetableSlots, session: Session = Depends(get_session)):
             TimetableSlots.day == slots.day,
             TimetableSlots.start_time < slots.end_time,
             TimetableSlots.end_time > slots.start_time,
+            TimetableSlots.is_temporary == False,
         )
     ).first()
 
-    if conflict:
+    if conflict and not slots.is_temporary:
         raise HTTPException(
             status_code=400,
             detail=f"Conflicting slot found: {conflict.subject_code} ({conflict.start_time}-{conflict.end_time})",
