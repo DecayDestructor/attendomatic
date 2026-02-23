@@ -98,7 +98,7 @@ def add_slot(slots: TimetableSlots, session: Session = Depends(get_session)):
         )
     ).first()
 
-    if conflict and not slots.is_temporary:
+    if conflict and conflict.is_temporary == False:
         raise HTTPException(
             status_code=400,
             detail=f"Conflicting slot found: {conflict.subject_code} ({conflict.start_time}-{conflict.end_time})",
@@ -269,7 +269,7 @@ def update_slot(
             TimetableSlots.is_temporary == False,
         )
     ).first()
-    if conflict_slot:
+    if conflict_slot and conflict_slot.is_temporary == False:
         raise HTTPException(
             status_code=400,
             detail="Updated slot conflicts with an existing slot",
