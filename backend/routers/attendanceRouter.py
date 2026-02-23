@@ -263,6 +263,7 @@ def update_slot(
             TimetableSlots.id != slot.id,
             TimetableSlots.start_time < updated_slot.end_time,
             TimetableSlots.end_time > updated_slot.start_time,
+            TimetableSlots.is_temporary == False,
         )
     ).first()
     if conflict_slot:
