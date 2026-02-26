@@ -190,7 +190,7 @@ def read_main(
                 "- STILL use intent='mark_attendance'\n"
                 "- DO NOT use add_slot\n"
                 "- DO NOT set confusion_flag\n"
-                "- start_time and end_time will be null\n"
+                "- start_time and end_time is to be read from the message\n"
                 "- In confirmation_message, you MUST explicitly state that this class is NOT in the timetable for that day and a TEMPORARY slot will be created.\n"
                 "- Example: 'BDA lab is not in your timetable for Tuesday. A temporary slot will be created and attendance will be marked as attended on Tuesday, 17 February 2026. Is that correct?'\n\n"
                 "=== TIMETABLE REQUEST RULE ===\n"
