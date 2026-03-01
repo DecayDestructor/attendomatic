@@ -172,6 +172,23 @@ class PendingAction(SQLModel, table=True):
     )
 
 
+class ChatID(SQLModel, table=True):
+    """
+    Stores the mapping between Adapter contact IDs and internal user IDs.
+
+    This allows the bot to identify which user is sending a message based on their Adapter contact ID.
+    """
+
+    __tablename__ = "chat_ids"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    contact_id: str = Field(index=True, unique=True)  # Adapter contact ID
+    user_id: int = Field(foreign_key="users.id", ondelete="CASCADE", index=True)
+    adapter: str = Field(
+        default="telegram"
+    )  # In case we add more adapters in the future
+
+
 # ───────────────────────────────────────────────
 # LLM Intent / Response Schemas (Pydantic only)
 # ───────────────────────────────────────────────

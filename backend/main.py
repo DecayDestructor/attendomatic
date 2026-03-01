@@ -4,7 +4,7 @@ from backend.db.database import create_db_and_tables
 from backend.routers import index, attendanceRouter, userRouter
 from backend.adapters.telegram import router as telegram_router
 
-app = FastAPI()
+from backend.app_instance import app
 
 
 @app.on_event("startup")

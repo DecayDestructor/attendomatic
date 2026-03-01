@@ -12,17 +12,25 @@ Message flow:
 4. A confirmation prompt is sent back to the user.
 """
 
+from backend.db.database import get_session
+from backend.db.models import ChatID, User
+
 from fastapi import APIRouter, Header, Request, HTTPException
+from fastapi_crons import Crons, get_cron_router
 from teleapi.httpx_transport import httpx_teleapi_factory
 from backend.config import settings
 from backend.utils.userManagement import read_user
 from backend.utils.flags import is_telegram_bot_down
 from backend.routers.index import read_main
 from backend.db.database import get_session
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from backend.utils.verify_secret_token import verify_secret_header
 from backend.utils.verify_secret_token import verify_api_secret
+from backend.app_instance import app
+from backend.app_instance import crons
+
+app.include_router(get_cron_router())
 
 router = APIRouter()
 bot = httpx_teleapi_factory(settings.TELEGRAM_BOT_KEY)  # Telegram bot API client
@@ -88,7 +96,19 @@ async def process_message(message: dict):
     try:
         user = read_user(str(user_contact_id), session)
         print(f"Received message from user {user.name} ({user_contact_id}): {text}")
-
+        # check if contact_id, chat_id pair exists
+        chat_id_record = session.exec(
+            select(ChatID).where(
+                ChatID.contact_id == contact_id, ChatID.adapter == "telegram"
+            )
+        ).first()
+        if not chat_id_record:
+            # If no mapping exists, create one
+            new_chat_id = ChatID(
+                contact_id=contact_id, user_id=user.id, adapter="telegram"
+            )
+            session.add(new_chat_id)
+            session.commit()
         # --- Check for an existing pending action (confirmation flow) ---
         get_pending = get_pending_action(str(user_contact_id), session)
         message = (
@@ -194,3 +214,27 @@ async def delete_webhook(_=Depends(verify_api_secret)):
         return {"status": "Webhook deleted"}
     except Exception as e:
         return {"status": "Failed", "error": str(e)}
+
+
+@crons.cron("0 23 * * *", name="bot_message")
+def send_scheduled_message():
+    """Example cron job that sends a message every 1 minutes (for testing)"""
+    # get all chat IDs from the database where adapter is telegram and send a message to each
+    session: Session = get_db_session()
+    chat_ids = session.exec(
+        select(ChatID, User)
+        .join(User, ChatID.user_id == User.id)
+        .where(ChatID.adapter == "telegram")
+    ).all()
+    print(chat_ids)
+    try:
+        # Notify the user at 11:00pm every day to mark attendance for the day
+        for chat_id, user in chat_ids:
+            bot.sendMessage(
+                chat_id=chat_id.contact_id,
+                text=f"Hi {user.name}! Don't forget to mark your attendance for today if you haven't already.",
+            )
+        print("Scheduled message sent to all Telegram users.")
+
+    except Exception as e:
+        print("Error sending scheduled message:", e)

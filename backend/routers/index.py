@@ -202,7 +202,7 @@ def read_main(
                 "- Use intent='get_attendance_stats'\n"
                 "- DO NOT include stats in confirmation_message\n\n"
                 "- If classType is specified, filter stats for that class type\n"
-                "If classType is not specified, provide stats for all class types\n\n"
+                "If classType is not specified, provide stats for lecture and lab\n\n"
                 "If subject_code is specified, provide stats for that subject\n"
                 "If subject_code is not specified, provide stats for all subjects\n\n"
                 "=== ATTENDANCE LOGS FOR DATE RULE ===\n"
